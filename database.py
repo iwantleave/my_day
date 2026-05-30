@@ -1,5 +1,6 @@
 import sqlite3
 import os
+from datetime import date
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'crm.db')
 
@@ -166,3 +167,27 @@ def export_all_customers() -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_dashboard_stats() -> dict:
+    conn = get_conn()
+    today = date.today().isoformat()
+    total = conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
+    today_followup = conn.execute(
+        "SELECT COUNT(*) FROM customers WHERE next_follow = ?", [today]
+    ).fetchone()[0]
+    overdue = conn.execute(
+        "SELECT COUNT(*) FROM customers WHERE next_follow < ? AND next_follow != ''",
+        [today],
+    ).fetchone()[0]
+    status_rows = conn.execute(
+        "SELECT status, COUNT(*) as cnt FROM customers GROUP BY status"
+    ).fetchall()
+    status_dist = {r['status']: r['cnt'] for r in status_rows}
+    conn.close()
+    return {
+        'total': total,
+        'today_followup': today_followup,
+        'overdue_followup': overdue,
+        'status_distribution': status_dist,
+    }

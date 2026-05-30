@@ -6,7 +6,7 @@ from database import (
     get_customer as db_get_customer,
     list_customers as db_list_customers,
     insert_contact, list_contacts as db_list_contacts,
-    export_all_customers,
+    export_all_customers, get_dashboard_stats as db_get_dashboard_stats,
 )
 
 
@@ -97,3 +97,7 @@ def export_csv() -> str:
         writer.writeheader()
         writer.writerows(rows)
     return out.getvalue()
+
+
+def get_dashboard_stats() -> dict:
+    return db_get_dashboard_stats()

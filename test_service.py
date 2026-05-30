@@ -13,6 +13,7 @@ import database
 from service import (
     calculate_age, add_customer, edit_customer, remove_customer,
     get_customer, search_customers, add_contact, get_contacts, export_csv,
+    get_dashboard_stats,
 )
 from models import Customer
 
@@ -273,3 +274,58 @@ class TestModelDefaults:
         assert c.status == '潜在客户'
         assert c.level == 'C'
         assert c.id == ''
+
+
+class TestDashboardStats:
+    def test_empty_db(self):
+        stats = get_dashboard_stats()
+        assert stats['total'] == 0
+        assert stats['today_followup'] == 0
+        assert stats['overdue_followup'] == 0
+        assert stats['status_distribution'] == {}
+
+    def test_with_customers(self):
+        add_customer(make_customer({'name': 'A', 'status': '潜在客户', 'next_follow': date.today().isoformat()}))
+        add_customer(make_customer({'name': 'B', 'status': '意向客户', 'next_follow': '2020-01-01'}))
+        add_customer(make_customer({'name': 'C', 'status': '已成交'}))
+        stats = get_dashboard_stats()
+        assert stats['total'] == 3
+        assert stats['today_followup'] == 1
+        assert stats['overdue_followup'] == 1
+        assert stats['status_distribution'] == {'潜在客户': 1, '意向客户': 1, '已成交': 1}
+
+
+class TestCascadeDelete:
+    def test_delete_customer_removes_contacts(self):
+        cid = add_customer(make_customer({'name': '张三'}))
+        add_contact({'customer_id': cid, 'time': '2025-01-01', 'summary': '测试联系'})
+        add_contact({'customer_id': cid, 'time': '2025-06-01', 'summary': '第二次联系'})
+        assert len(get_contacts(cid)) == 2
+        remove_customer(cid)
+        assert get_customer(cid) is None
+        assert get_contacts(cid) == []
+
+
+class TestSortWhitelist:
+    def test_invalid_sort_falls_back_to_updated_at(self):
+        add_customer(make_customer({'name': 'A'}))
+        add_customer(make_customer({'name': 'B'}))
+        rows = search_customers(sort_by='invalid_column')
+        assert len(rows) >= 2
+        assert any(r['name'] in ('A', 'B') for r in rows)
+
+    def test_sql_injection_in_sort_by(self):
+        add_customer(make_customer({'name': 'safe'}))
+        rows = search_customers(sort_by="name; DROP TABLE customers;")
+        assert len(rows) >= 1
+        assert rows[0]['name'] == 'safe'
+
+
+class TestContactAutoTime:
+    def test_add_contact_defaults_time_when_empty(self):
+        cid = add_customer(make_customer())
+        contact_id = add_contact({'customer_id': cid, 'summary': '无时间'})
+        contacts = get_contacts(cid)
+        assert len(contacts) == 1
+        assert contacts[0]['time'] == date.today().isoformat()
+        assert contacts[0]['summary'] == '无时间'
